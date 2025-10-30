@@ -133,6 +133,35 @@ Automatic nano evaluation metrics at threshold 0.1:
 | hotchpotch/natural-questions-context-relevance:nodup_freq2 | 0.6513 | 0.9013 | 0.3088 | 73.80 | 0.8363 |
 | hotchpotch/gooaq-context-relevance-130k:default | 0.8214 | 0.9782 | 0.5006 | 46.65 | 0.7208 |
 
-The Japanese & English toy configuration (`configs/toy-open-provence-reranker-v1.yaml`) provides the same sanity check across the multilingual datasets with comparable F2 scores.
+### Japanese & English toy run (2025-10-30)
+
+```bash
+uv run open_provence_trainer configs/toy-open-provence-reranker-v1.yaml
+```
+
+The run completed in ~4 minutes 22 seconds on an RTX 5090 (effective batch size 64). Artefacts live under
+`output/toy-open-provence-reranker-v1_20251030_092420/final_model`, and the automatic nano evaluation used
+`configs/eval_datasets/ja_nano.yaml` at threshold 0.1. Expect evaluation logs similar to:
+
+| Dataset | F2 | Recall | Precision | Mean Compression (%) | Span Accuracy |
+| --- | --- | --- | --- | --- | --- |
+| hotchpotch/msmarco-context-relevance:freq2 | 0.7831 | 0.9930 | 0.4243 | 9.65 | 0.4773 |
+| hotchpotch/natural-questions-context-relevance:nodup_freq2 | 0.6036 | 0.9821 | 0.2375 | 62.54 | 0.7548 |
+| hotchpotch/gooaq-context-relevance-130k:default | 0.7499 | 0.9716 | 0.3921 | 32.08 | 0.5706 |
+| hotchpotch/japanese-context-relevance:msmarco-ja-freq2 | 0.8489 | 0.9664 | 0.5712 | 25.03 | 0.6970 |
+| hotchpotch/japanese-context-relevance:auto-wiki-qa-nemotron | 0.7046 | 0.8835 | 0.3893 | 70.63 | 0.8727 |
+| hotchpotch/japanese-context-relevance:jaquad-freq2 | 0.7152 | 0.9221 | 0.3770 | 72.37 | 0.8818 |
+| hotchpotch/japanese-context-relevance:jqara | 0.6359 | 0.8279 | 0.3299 | 67.18 | 0.8376 |
+| hotchpotch/japanese-context-relevance:jsquad-freq2 | 0.7280 | 0.8859 | 0.4250 | 62.27 | 0.8264 |
+| hotchpotch/japanese-context-relevance:miracl | 0.8221 | 0.9529 | 0.5307 | 43.04 | 0.7808 |
+| hotchpotch/japanese-context-relevance:mkqa | 0.6406 | 0.8682 | 0.3127 | 67.61 | 0.8437 |
+| hotchpotch/japanese-context-relevance:mr-tydi | 0.8222 | 0.9508 | 0.5336 | 44.52 | 0.7919 |
+| hotchpotch/japanese-context-relevance:quiz-no-mori | 0.6456 | 0.7701 | 0.3920 | 72.99 | 0.8651 |
+| hotchpotch/japanese-context-relevance:quiz-works | 0.6516 | 0.8069 | 0.3683 | 70.80 | 0.8547 |
+| hotchpotch/japanese-context-relevance:JFWIR | 0.6515 | 0.7901 | 0.3829 | 60.83 | 0.7377 |
+
+These values illustrate that the Japanese slices stay within the expected F2 range (0.64–0.85) and compression
+rates (25–73%) for healthy pruning behaviour. Investigate large deviations before proceeding to full-scale
+runs.
 
 **If your toy results diverge dramatically from these numbers, something is misconfigured—double-check dataset access, GPU precision settings, and the trainer logs before trusting the run.**
