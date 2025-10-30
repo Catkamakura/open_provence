@@ -136,15 +136,15 @@ Run `uv sync`. This installs the CPU-only build `torch==2.7.1`, which supports L
 
 The full breakdown lives in the [OpenProvence v1 Evaluation Report](docs/eval_reports/open_provence_v1_eval_report.md). Key takeaways:
 
-### MLDR (English)
+### MLDR (English, LLM evaluation on the MLDR dataset)
 
 - Baseline (no pruning) records Has Answer 93.68%.
 - `xsmall` @ th=0.05 maintains 93.68% Has Answer with 82.18% positive / 99.18% negative compression, while remaining the fastest Provence checkpoint.
 - `base` @ th=0.05 also keeps Has Answer at 93.68% and deepens compression to 90.05% positive / 99.62% negative.
-- `large` @ th=0.10 reaches 93.10% Has Answer with 94.38% positive / 99.90% negative compression, matching the naver/provence baseline’s retention with a much smaller footprint.
+- `large` @ th=0.10 reaches 93.10% Has Answer with 94.38% positive / 99.90% negative compression, matching the naver/provence baseline’s retention while remaining fully open-source, fine-tunable, and comparable in size (310M vs. 305M parameters).
 - `naver-provence` @ th=0.05 (reference) posts 93.10% Has Answer with 92.10% positive / 99.15% negative compression.
 
-### MLDR (Japanese)
+### MLDR (Japanese, LLM evaluation on the MLDR dataset)
 
 - Baseline (no pruning) records Has Answer 77.71%.
 - `xsmall` @ th=0.05 lifts Has Answer to 81.93% with 76.46% positive / 96.11% negative compression.

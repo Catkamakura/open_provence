@@ -111,7 +111,7 @@ output-dir/
     summary.md            # human-readable recap
 ```
 
-## 4. Running baselines and partial reruns
+## 4. Running baselines and partial reruns (LLM evaluation on MLDR dataset)
 
 - **Pruned run only**: If you just want to rebuild the pruned dataset without LLM judging, add `--no-eval`. You can judge later with `--skip-process --force-eval`.
 - **Original text baseline**: Use `--text-source original` to bypass pruning and evaluate the raw passages. This is helpful for establishing upper bounds. Example:

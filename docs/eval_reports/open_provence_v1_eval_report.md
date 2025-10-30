@@ -3,7 +3,7 @@
 ## Executive Summary
 - **MLDR (English)**  
   - Compared with the unpruned original, thresholds up to 0.05-0.10 keep Has Answer high while pruning roughly 80-93% of passages across all Provence checkpoints.  
-  - The naver-provence(435M) baseline is larger, yet the 30M-310M Provence models deliver comparable scores in this pruning-only evaluation; in particular, the 30M xsmall checkpoint at th=0.05 maintains the original score with only moderate pruning while running noticeably faster, which remains a pleasant surprise.
+  - The naver-provence(305M) baseline is comparable in size to our 310M large checkpoint, yet the 30M-310M Provence models deliver similar scores in this pruning-only evaluation; in particular, the 30M xsmall checkpoint at th=0.05 maintains the original score with only moderate pruning while running noticeably faster, which remains a pleasant surprise.
 - **MLDR (Japanese)**  
   - Thresholds up to 0.10 stay at or above the original baseline for all checkpoints. Only large@0.05 trails base after six retries (best 80.72% vs. base 83.13%), while 0.10/0.30/0.50 match or surpass base.
 - **Dataset retention benchmarks**  
@@ -18,9 +18,9 @@
 | xsmall | [hotchpotch/open-provence-reranker-xsmall-v1](https://huggingface.co/hotchpotch/open-provence-reranker-xsmall-v1) | 30M |
 | large | [hotchpotch/open-provence-reranker-large-v1](https://huggingface.co/hotchpotch/open-provence-reranker-large-v1) | 310M |
 | en-gte | [hotchpotch/open-provence-reranker-v1-gte-modernbert-base](https://huggingface.co/hotchpotch/open-provence-reranker-v1-gte-modernbert-base) | 149M |
-| naver-provence | [naver/provence-reranker-debertav3-v1](https://huggingface.co/naver/provence-reranker-debertav3-v1) | 435M |
+| naver-provence | [naver/provence-reranker-debertav3-v1](https://huggingface.co/naver/provence-reranker-debertav3-v1) | 305M |
 
-## MLDR English
+## MLDR English (LLM evaluation on MLDR dataset)
 
 | Model | Variant | Has Answer (%) | Compression (pos) | Compression (neg) |
 | --- | --- | --- | --- | --- |
@@ -46,7 +46,7 @@
 | naver-provence | th=0.20 | 90.23% | 95.64% | 99.72% |
 | naver-provence | th=0.50 | 84.48% | 97.43% | 99.90% |
 
-## MLDR Japanese
+## MLDR Japanese (LLM evaluation on MLDR dataset)
 
 | Model | Variant | Has Answer (%) | Compression (pos) | Compression (neg) |
 | --- | --- | --- | --- | --- |
