@@ -6,7 +6,7 @@ This guide walks through the end-to-end process for training OpenProvence rerank
 - Run `uv sync` to install the base environment (PyTorch 2.7.1 CPU/Metal build).
 - Sign in to the Hugging Face Hub if any referenced datasets require authentication.
 - Export `WANDB_API_KEY` when you want metrics in the shared Weights & Biases project.
-- Use a single NVIDIA GPU with ≥16 GB of memory; every recipe in this guide fits that footprint. **Installing FlashAttention (`uv sync --group flash-attn` or by adding the vetted wheel in `tmp/`) delivers a noticeable speed-up.**
+- Use a single NVIDIA GPU with ≥16 GB of memory; every recipe in this guide fits that footprint. **GPU hosts should run `uv sync --group cuda --no-group cpu --group flash-attn` (or add the vetted wheel in `tmp/`) to pick up CUDA PyTorch and FlashAttention for faster training.**
 
 ## Ready-to-Use Configurations
 - Release checkpoints (all timed on an RTX 5090)  
