@@ -117,7 +117,7 @@ Run `uv sync`. This installs the CPU-only build `torch==2.7.1`, which supports L
 
 ### Linux GPU host (CUDA 12.8)
 
-1. Fresh install: `uv sync --group cuda --no-group cpu` to resolve `torch` from the CUDA 12.8 wheels defined in
+1. Fresh install: `uv sync --group cuda` to resolve `torch` from the CUDA 12.8 wheels defined in
    `pyproject.toml`.
 2. Converting an existing CPU environment: run `uv sync` once, then replace the wheel manually:
    ```bash
@@ -126,7 +126,7 @@ Run `uv sync`. This installs the CPU-only build `torch==2.7.1`, which supports L
    This command also installs the matching `nvidia-*` runtime libraries.
 3. (Optional) Install flash attention kernels:
    - Using FlashAttention speeds up training and inference
-   - New install: `uv sync --group cuda --no-group cpu --group flash-attn`
+   - New install: `uv sync --group cuda --group flash-attn`
    - If the PyPI extra works on your GPU: `uv sync --group flash-attn`
    - If you prefer an official wheel: download the match for your platform from https://github.com/Dao-AILab/flash-attention/releases (e.g. save it under `./tmp/`) and install with `uv pip install ./tmp/<wheel-name.whl>`
    - If you maintain a vetted wheel locally: `uv pip install ./tmp/flash_attn-2.8.3+cu12torch2.7cxx11abiTRUE-cp311-cp311-linux_x86_64.whl`
