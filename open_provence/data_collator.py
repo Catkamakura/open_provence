@@ -206,7 +206,6 @@ class OpenProvenceDataCollator:
                     relevant_chunks.append(chunk_labels)
 
             # Get ranking labels/targets for distillation (always reranking mode)
-            texts = feature[self.texts_column]
             num_docs = len(texts)
 
             if self._has_labels and self.labels_column in feature:
