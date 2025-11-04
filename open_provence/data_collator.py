@@ -80,13 +80,13 @@ class OpenProvenceDataCollator:
         self._required_columns = [
             self.query_column,
             self.texts_column,
-            self.labels_column,
             self.chunks_pos_column,
             self.relevant_chunks_column,
         ]
 
         # Column validation will be done when first batch is processed
         self._validated = False
+        self._has_labels = False
 
         # Cache tokenizer properties for performance
         self._has_sep_token = "[SEP]" in self.tokenizer.get_vocab()
@@ -123,12 +123,27 @@ class OpenProvenceDataCollator:
             )
 
         # Scores column is optional
-        if self.scores_column and self.scores_column not in columns:
+        scores_available = bool(self.scores_column and self.scores_column in columns)
+        if self.scores_column and not scores_available:
             logger.warning(
                 f"Teacher scores column '{self.scores_column}' not found. "
                 f"Using '{self.labels_column}' for ranking targets."
             )
             self.scores_column = None
+
+        self._has_labels = bool(self.labels_column and self.labels_column in columns)
+
+        if not self._has_labels and not scores_available:
+            raise ValueError(
+                "Neither labels nor teacher scores are available for ranking targets. "
+                "Provide at least one of them."
+            )
+
+        if not self._has_labels and scores_available:
+            logger.info(
+                "Labels column '%s' not found; proceeding with teacher scores only.",
+                self.labels_column,
+            )
 
         self._validated = True
 
@@ -191,11 +206,21 @@ class OpenProvenceDataCollator:
                     relevant_chunks.append(chunk_labels)
 
             # Get ranking labels/targets for distillation (always reranking mode)
-            labels = feature[self.labels_column]
+            num_docs = len(texts)
+
+            if self._has_labels and self.labels_column in feature:
+                labels = feature[self.labels_column]
+            else:
+                labels = [0] * num_docs
+
             if self.scores_column and self.scores_column in feature:
                 ranking_targets = feature[self.scores_column]
+            elif self._has_labels and self.labels_column in feature:
+                ranking_targets = feature[self.labels_column]
             else:
-                ranking_targets = labels
+                raise ValueError(
+                    "Unable to determine ranking targets; missing teacher scores and labels."
+                )
 
             for doc_idx, (text, label, target, chunk_pos, rel_chunks) in enumerate(
                 zip(texts, labels, ranking_targets, chunks_pos, relevant_chunks)
@@ -265,13 +290,19 @@ class OpenProvenceDataCollator:
             texts = feature[self.texts_column]
             num_docs = len(texts)
 
-            # Get targets for distillation
-            # Prefer teacher scores (float values from teacher reranker)
-            # over binary labels for better knowledge transfer
             if self.scores_column and self.scores_column in feature:
-                targets = feature[self.scores_column]  # Continuous teacher scores
+                targets = feature[self.scores_column]
+            elif self._has_labels and self.labels_column in feature:
+                targets = feature[self.labels_column]
             else:
-                targets = feature[self.labels_column]  # Binary labels as fallback
+                raise ValueError(
+                    "Unable to populate ranking targets; missing teacher scores and labels."
+                )
+
+            if not isinstance(targets, list):
+                raise ValueError(
+                    "Ranking targets must be provided as a list aligning with document candidates."
+                )
 
             # Fill ranking targets
             ranking_targets_matrix[i, :num_docs] = torch.tensor(targets, dtype=torch.float32)
