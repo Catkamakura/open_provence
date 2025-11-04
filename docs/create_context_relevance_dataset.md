@@ -25,6 +25,12 @@ Each converted dataset is saved with `datasets.Dataset.save_to_disk` and contain
 | `context_spans_relevance` | Binary span flags from the pruner (`1` keeps the span, `0` masks it). Treat as optional until you run the relevance augmentation step. |
 | `teacher_scores.<name>` | Cross-encoder scores appended later; one column per reranker (optional). |
 
+> **How training uses `labels`**
+>
+> - The column is *not* strictly required when the dataset ships with teacher scores. In that case the trainer consumes the `teacher_scores.*` columns for the regression objective and can fall back to deterministic zero labels.
+> - When teacher scores are absent, the ranking head relies on `labels` as binary targets, so the column becomes mandatory for those configurations.
+> - Even when teacher scores exist, `labels` are still read by the data-preparation pipeline (notably in `sample_items_by_label_priority`) to keep at least one positive candidate per query during the optional `items` down-sampling step. If you omit `labels`, that sampler degrades to uniform selection and may drop all positives in edge cases.
+
 Datasets are split into `train`, `validation`, and `test`. If the source dataset is missing
 `validation`/`test`, the converter samples 1% (up to 5k rows) from the shuffled `train` split to
 create them; otherwise the upstream splits are preserved as-is.

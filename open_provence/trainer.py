@@ -655,35 +655,93 @@ def sample_items_by_label_priority(
     logger = logging.getLogger(__name__)
     initial_size = len(dataset)
 
+    label_column_present = label_column in dataset.column_names
+
+    sample_reference_column: str | None = None
+    fallback_warning_logged = False
+
+    if not label_column_present:
+        # Heuristically pick a column that mirrors candidate lists so we can still cap items
+        preferred_candidates = [
+            "texts",
+            "context_spans",
+            "context",
+            "passages",
+        ]
+
+        for candidate in preferred_candidates:
+            if candidate in dataset.column_names:
+                sample_reference_column = candidate
+                break
+
+        if sample_reference_column is None:
+            # Fallback: choose the first list-like column from the first row
+            first_row = dataset[0] if len(dataset) else {}
+            for name, value in first_row.items():
+                if isinstance(value, list):
+                    sample_reference_column = name
+                    break
+
+        if sample_reference_column is None:
+            logger.warning(
+                "Could not find a list column to apply 'items' sampling without '%s'. Skipping.",
+                label_column,
+            )
+            return dataset
+
+        logger.info(
+            "Column '%s' not found; falling back to uniform sampling using '%s'.",
+            label_column,
+            sample_reference_column,
+        )
+
     first_run = True
 
     def sample_and_limit(example: dict[str, Any], idx: int) -> dict[str, Any]:
-        nonlocal first_run
-        labels = example.get(label_column)
-        if not isinstance(labels, list):
-            return example
+        nonlocal first_run, fallback_warning_logged
+        reference_column = label_column if label_column_present else sample_reference_column
+        labels = example.get(label_column) if label_column_present else None
 
-        original_length = len(labels)
+        if label_column_present and isinstance(labels, list):
+            original_length = len(labels)
+        else:
+            reference_values = example.get(reference_column) if reference_column else None
+            if not isinstance(reference_values, list):
+                if not fallback_warning_logged:
+                    fallback_warning_logged = True
+                    logger.warning(
+                        "Row is missing usable list data for sampling (index %s); leaving unchanged.",
+                        idx,
+                    )
+                return example
+            original_length = len(reference_values)
+
         if original_length == 0:
             return example
 
-        positive_indices = [i for i, value in enumerate(labels) if value == 1]
-        negative_indices = [i for i, value in enumerate(labels) if value != 1]
+        selected_indices: list[int]
 
-        selected_indices = []
+        if label_column_present and isinstance(labels, list):
+            positive_indices = [i for i, value in enumerate(labels) if value == 1]
+            negative_indices = [i for i, value in enumerate(labels) if value != 1]
 
-        # Prioritize positives in their original order
-        if positive_indices:
-            selected_indices.extend(positive_indices[:max_items])
+            selected_indices = []
 
-        remaining_slots = max_items - len(selected_indices)
+            if positive_indices:
+                selected_indices.extend(positive_indices[:max_items])
 
-        # Sample remaining slots uniformly from negatives (or all items if we had no positives)
-        if remaining_slots > 0:
-            candidates = negative_indices if positive_indices else list(range(original_length))
+            remaining_slots = max_items - len(selected_indices)
+
+            if remaining_slots > 0:
+                candidates = negative_indices if positive_indices else list(range(original_length))
+                rng = random.Random(seed + idx)
+                rng.shuffle(candidates)
+                selected_indices.extend(candidates[:remaining_slots])
+        else:
             rng = random.Random(seed + idx)
+            candidates = list(range(original_length))
             rng.shuffle(candidates)
-            selected_indices.extend(candidates[:remaining_slots])
+            selected_indices = candidates[:max_items]
 
         selected_indices = sorted(set(i for i in selected_indices if i < original_length))
 
@@ -696,7 +754,7 @@ def sample_items_by_label_priority(
         if first_run:
             first_run = False
             logger.debug(
-                f"[items filter] Fields trimmed alongside '{label_column}': {fields_to_filter}"
+                f"[items filter] Fields trimmed alongside '{reference_column}': {fields_to_filter}"
             )
 
         for field_name in fields_to_filter:
@@ -704,12 +762,16 @@ def sample_items_by_label_priority(
 
         return example
 
-    logger.info(f"Sampling items by '{label_column}' priority with max_items={max_items}...")
+    label_desc = label_column if label_column_present else f"uniform({sample_reference_column})"
+    logger.info(f"Sampling items by '{label_desc}' priority with max_items={max_items}...")
     dataset = cast(Dataset, dataset.map(sample_and_limit, with_indices=True, num_proc=num_proc))
 
     def has_required_items(example):
-        labels = example.get(label_column, [])
-        return isinstance(labels, list) and len(labels) >= max_items
+        if label_column_present:
+            labels = example.get(label_column, [])
+            return isinstance(labels, list) and len(labels) >= max_items
+        reference_values = example.get(sample_reference_column, [])
+        return isinstance(reference_values, list) and len(reference_values) >= max_items
 
     logger.info(f"Removing rows with fewer than {max_items} items after sampling...")
     dataset = cast(Dataset, dataset.filter(has_required_items, num_proc=num_proc))

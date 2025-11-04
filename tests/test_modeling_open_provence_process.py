@@ -24,6 +24,12 @@ def _requires_checkpoint(path: Path) -> bool:
         # full process pipeline.
         pytest.skip(f"checkpoint directory {path} is missing")
         return False
+    weights_file = path / "model.safetensors"
+    if not weights_file.exists() or weights_file.stat().st_size < 1024 * 1024:
+        pytest.skip(
+            f"checkpoint {path} is a placeholder without full weights; skipping integration test"
+        )
+        return False
     return True
 
 
