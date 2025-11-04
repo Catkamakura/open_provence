@@ -97,7 +97,7 @@ For a deeper dive into configurable options, skim the highlights below and see [
 
 - **`question: str | Sequence[str]`** – Query text. Provide a list to batch multiple questions; each item pairs with the corresponding entry in `context`.
 - **`context: str | Sequence[str] | Sequence[Sequence[str]]`** – Contexts aligned to the query. Use a list for one document per query, or a list of lists to supply multiple documents (or pre-split sentences) for each query.
-- **`title: str | Sequence[str] | Sequence[Sequence[str]] | None`** – Optional titles. The default `"first_sentence"` reuses the opening sentence of each context. Set `None` to disable automatically extracting titles.
+- **`title: str | Sequence[str] | Sequence[Sequence[str]] | None`** – Optional titles. The default sentinel `"first_sentence"` marks the opening sentence so it can be forced to stay when combined with `always_select_title=True` or `first_line_as_title=True`; without those flags it behaves like any other sentence. Set `None` to disable all title handling.
 - **`threshold: float` (default `0.1`)** – Pruning probability threshold. Larger values discard more sentences; values in `0.05–0.5` work well across datasets.
 - **`batch_size: int` (default `32`)** – Number of contexts processed per inference batch. Increase for higher throughput, decrease if you run out of memory.
 - **`language: str | None`** – Choose the built-in splitter (`"ja"`, `"en"`, or `"auto"`). The default is `None`, which behaves like `"auto"` and detects Japanese vs. English automatically.
