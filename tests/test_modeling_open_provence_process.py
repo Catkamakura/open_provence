@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 
 import pytest
 from open_provence.modeling_open_provence_standalone import (
+    OpenProvenceConfig,
     OpenProvenceModel,
     _FragmentRecord,
     english_sentence_splitter,
@@ -14,6 +16,9 @@ JAPANESE_MODEL_PATH = Path("output/open-provence-reranker-japanese-v20251021-bs2
 ENGLISH_RELEASE_MODEL_PATH = Path(
     "output/release_models/open-provence-reranker-v1-gte-modernbert-base"
 )
+
+ENGLISH_REMOTE_ID = "hotchpotch/open-provence-reranker-v1-gte-modernbert-base"
+EN_JP_REMOTE_ID = "hotchpotch/open-provence-reranker-xsmall-v1"
 
 
 def _requires_checkpoint(path: Path) -> bool:
@@ -33,6 +38,23 @@ def _requires_checkpoint(path: Path) -> bool:
     return True
 
 
+@cache
+def _load_remote_model(model_id: str) -> OpenProvenceModel:
+    config = OpenProvenceConfig.from_pretrained(model_id)
+    model = OpenProvenceModel(config)
+    model.eval()
+    return model
+
+
+def _load_model_with_remote_fallback(
+    checkpoint_dir: Path, remote_model_id: str
+) -> OpenProvenceModel:
+    weights_file = checkpoint_dir / "model.safetensors"
+    if weights_file.exists() and weights_file.stat().st_size >= 1024 * 1024:
+        return OpenProvenceModel.from_pretrained(str(checkpoint_dir))
+    return _load_remote_model(remote_model_id)
+
+
 def _build_single_fragment(model: OpenProvenceModel, document: str) -> list[_FragmentRecord]:
     token_ids = model.tokenizer.encode(document, add_special_tokens=False)
     return [
@@ -48,27 +70,26 @@ def _build_single_fragment(model: OpenProvenceModel, document: str) -> list[_Fra
 
 
 @pytest.mark.parametrize(
-    ("checkpoint", "question", "document"),
+    ("checkpoint", "remote_id", "question", "document"),
     [
         (
             ENGLISH_MODEL_PATH,
+            ENGLISH_REMOTE_ID,
             "What is artificial intelligence?",
             "Artificial intelligence studies intelligent behaviour in machines.",
         ),
         (
             JAPANESE_MODEL_PATH,
+            EN_JP_REMOTE_ID,
             "AIとは何ですか？",
             "AIは人工知能の略称で、人間の知能を機械で再現することを指します。",
         ),
     ],
 )
 def test_prepare_block_inputs_inserts_special_tokens(
-    checkpoint: Path, question: str, document: str
+    checkpoint: Path, remote_id: str, question: str, document: str
 ) -> None:
-    if not _requires_checkpoint(checkpoint):
-        return
-
-    model = OpenProvenceModel.from_pretrained(str(checkpoint))
+    model = _load_model_with_remote_fallback(checkpoint, remote_id)
 
     query_tokens = model.tokenizer.encode(question, add_special_tokens=False)
     fragments = _build_single_fragment(model, document)
@@ -104,17 +125,16 @@ def test_prepare_block_inputs_inserts_special_tokens(
 
 
 @pytest.mark.parametrize(
-    ("checkpoint", "expected_flag"),
+    ("checkpoint", "remote_id", "expected_flag"),
     [
-        (ENGLISH_MODEL_PATH, True),
-        (JAPANESE_MODEL_PATH, False),
+        (ENGLISH_MODEL_PATH, ENGLISH_REMOTE_ID, True),
+        (JAPANESE_MODEL_PATH, EN_JP_REMOTE_ID, False),
     ],
 )
-def test_manual_special_token_detection(checkpoint: Path, expected_flag: bool) -> None:
-    if not _requires_checkpoint(checkpoint):
-        return
-
-    model = OpenProvenceModel.from_pretrained(str(checkpoint))
+def test_manual_special_token_detection(
+    checkpoint: Path, remote_id: str, expected_flag: bool
+) -> None:
+    model = _load_model_with_remote_fallback(checkpoint, remote_id)
     actual_flag = getattr(model, "_manual_special_tokens_required", False)
     assert actual_flag is expected_flag
 
