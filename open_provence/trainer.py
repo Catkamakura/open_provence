@@ -46,7 +46,15 @@ logger = logging.getLogger(__name__)
 
 
 def _load_dataset_dict(dataset_name: str | None, subset: str | None) -> DatasetDict:
-    """Load a dataset from Hugging Face or a local ``datasets.save_to_disk`` directory."""
+    """Load from the Hub or a local ``datasets.save_to_disk`` directory.
+
+    Args:
+        dataset_name: Hugging Face dataset ID or path to a local dataset directory.
+        subset: Dataset subset/config to load when fetching from the Hub; ignored for local paths.
+
+    Returns:
+        A DatasetDict backed by either the Hub dataset or the on-disk directory.
+    """
 
     if dataset_name:
         dataset_path = Path(dataset_name).expanduser()
