@@ -120,7 +120,7 @@ activating the environment.
 
 - Add FlashAttention during the initial sync with `uv sync --group flash-attn` (the `cuda` group is
   already active).
-- Set `UV_PROJECT_ENVIRONMENT=dev,cuda` if you prefer to encode the default in your shell profile.
+- If you run multiple projects, consider adding a shell alias (e.g., `alias uv-sync-gpu='uv sync --group flash-attn'`) so CUDA installs stay one command away.
 
 ### CPU / Metal hosts
 
@@ -130,8 +130,8 @@ If you are on CPU-only Linux, Windows, or macOS, opt out of the CUDA group expli
 uv sync --no-default-groups --group dev --group cpu
 ```
 
-The same flag combination keeps the resolver on the CPU/Metal `torch==2.7.1` wheel. You can also set
-`UV_PROJECT_ENVIRONMENT=dev,cpu` to make this persistent.
+The same flag combination keeps the resolver on the CPU/Metal `torch==2.7.1` wheel. Add a shell alias
+like `alias uv-sync-cpu='uv sync --no-default-groups --group dev --group cpu'` if you swap often.
 
 ### Migrating an existing CPU environment to CUDA
 
