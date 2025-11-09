@@ -25,6 +25,40 @@ from .trainer import (
     train,
 )
 
+
+def _resolve_checkpoint_if_requested(
+    training_args: PruningTrainingArguments,
+) -> ResolvedCheckpoint | None:
+    """Resolve resume_from_checkpoint once and attach metadata to training_args."""
+
+    existing: ResolvedCheckpoint | None = getattr(training_args, "_resolved_checkpoint", None)
+    if existing is not None:
+        return existing
+
+    resume_path = training_args.resume_from_checkpoint
+    if not resume_path:
+        return None
+
+    resolved_checkpoint = resolve_resume_checkpoint_path(resume_path)
+    training_args.resume_from_checkpoint = str(resolved_checkpoint.checkpoint_dir)
+    training_args.output_dir = str(resolved_checkpoint.run_dir)
+    setattr(training_args, "_resolved_checkpoint", resolved_checkpoint)
+
+    step_note = (
+        f" (step {resolved_checkpoint.steps})" if resolved_checkpoint.steps is not None else ""
+    )
+    print(
+        "[checkpoint] resume requested:",
+        resume_path,
+        "→",
+        resolved_checkpoint.checkpoint_dir,
+        step_note,
+    )
+    print("[checkpoint] output_dir set to:", resolved_checkpoint.run_dir)
+
+    return resolved_checkpoint
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,29 +122,7 @@ def run_training(
     if resume_arg:
         training_args.resume_from_checkpoint = resume_arg
 
-    resolved_checkpoint: ResolvedCheckpoint | None = None
-    original_resume_path = training_args.resume_from_checkpoint
-    if original_resume_path:
-        try:
-            resolved_checkpoint = resolve_resume_checkpoint_path(original_resume_path)
-        except (FileNotFoundError, ValueError) as exc:
-            raise SystemExit(f"Failed to resolve checkpoint '{original_resume_path}': {exc}")
-
-        training_args.resume_from_checkpoint = str(resolved_checkpoint.checkpoint_dir)
-        training_args.output_dir = str(resolved_checkpoint.run_dir)
-        setattr(training_args, "_resolved_checkpoint", resolved_checkpoint)
-
-        step_note = (
-            f" (step {resolved_checkpoint.steps})" if resolved_checkpoint.steps is not None else ""
-        )
-        print(
-            "[checkpoint] resume requested:",
-            original_resume_path,
-            "→",
-            resolved_checkpoint.checkpoint_dir,
-            step_note,
-        )
-        print("[checkpoint] output_dir set to:", resolved_checkpoint.run_dir)
+    resolved_checkpoint = _resolve_checkpoint_if_requested(training_args)
 
     # Create timestamp for unique naming (when not resuming)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -302,7 +314,6 @@ def main():
 
     if checkpoint_override:
         training_args.resume_from_checkpoint = checkpoint_override
-        print(f"Checkpoint override provided: {checkpoint_override}")
 
     if eval_datasets_model_path:
         eval_settings = getattr(training_args, "eval_datasets", None)
@@ -315,11 +326,15 @@ def main():
     if model_args is None or data_args is None:
         raise RuntimeError("Failed to parse model/data arguments.")
 
+    resolved_checkpoint = _resolve_checkpoint_if_requested(training_args)
+
     # Create timestamp for unique naming
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Set output_dir if not specified or using default
-    if not training_args.output_dir or training_args.output_dir == "trainer_output":
+    if (
+        not training_args.output_dir or training_args.output_dir == "trainer_output"
+    ) and not resolved_checkpoint:
         # Generate default output_dir with timestamp
         if config_file_arg:
             # Use config file name as base

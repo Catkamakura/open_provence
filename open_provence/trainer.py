@@ -1445,10 +1445,6 @@ def train(
             checkpoint_dir,
         )
 
-        original_resolved = Path(original_resume_path).expanduser().resolve()
-        if original_resolved != checkpoint_dir:
-            logger.info("Resolved checkpoint %s → %s", original_resume_path, checkpoint_dir)
-
         current_output_dir = (
             Path(training_args.output_dir).expanduser().resolve()
             if training_args.output_dir is not None
