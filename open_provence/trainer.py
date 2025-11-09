@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,61 @@ from .modeling_open_provence_standalone import OpenProvenceConfig
 from .utils.modeling_export import write_modeling_open_provence
 
 logger = logging.getLogger(__name__)
+
+_CHECKPOINT_DIR_PATTERN = re.compile(r"checkpoint-(\d+)$")
+
+
+@dataclass
+class ResolvedCheckpoint:
+    checkpoint_dir: Path
+    run_dir: Path
+    steps: int | None = None
+
+
+def resolve_resume_checkpoint_path(candidate_path: str | Path) -> ResolvedCheckpoint:
+    """Resolve a checkpoint path.
+
+    The user may provide either the exact ``checkpoint-XXXX`` directory or the
+    parent training output directory. This helper normalises the input so the
+    trainer always receives a directory that contains ``trainer_state.json``.
+    """
+
+    path = Path(candidate_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint path '{path}' does not exist")
+
+    if path.is_file():
+        raise ValueError(
+            f"Checkpoint path '{path}' is a file. Please point to a checkpoint directory."
+        )
+
+    trainer_state = path / "trainer_state.json"
+    if trainer_state.exists():
+        match = _CHECKPOINT_DIR_PATTERN.search(path.name)
+        steps = int(match.group(1)) if match else None
+        logger.info("Using explicitly provided checkpoint: %s", path)
+        return ResolvedCheckpoint(checkpoint_dir=path, run_dir=path.parent, steps=steps)
+
+    checkpoint_dirs: list[tuple[int, Path]] = []
+    for child in path.iterdir():
+        if not child.is_dir():
+            continue
+        match = _CHECKPOINT_DIR_PATTERN.match(child.name)
+        if not match:
+            continue
+        if not (child / "trainer_state.json").exists():
+            continue
+        checkpoint_dirs.append((int(match.group(1)), child))
+
+    if not checkpoint_dirs:
+        raise ValueError(
+            f"Checkpoint path '{path}' does not contain any checkpoint-* directories with trainer_state.json"
+        )
+
+    checkpoint_dirs.sort(key=lambda pair: pair[0])
+    steps, latest = checkpoint_dirs[-1]
+    logger.info("Resolved checkpoint directory %s → %s", path, latest)
+    return ResolvedCheckpoint(checkpoint_dir=latest, run_dir=path, steps=steps)
 
 
 def _load_dataset_dict(dataset_name: str | None, subset: str | None) -> DatasetDict:
@@ -1275,6 +1331,16 @@ def parse_config_file(
     logging_steps = training_config.get("logging_steps", None)
     save_steps = training_config.get("save_steps", None)
 
+    resume_from_checkpoint = training_config.get("resume_from_checkpoint")
+    checkpoint_alias = training_config.get("checkpoint")
+    if checkpoint_alias and resume_from_checkpoint and checkpoint_alias != resume_from_checkpoint:
+        logger.warning(
+            "Both 'checkpoint' and 'resume_from_checkpoint' are set in the config;"
+            " using 'resume_from_checkpoint'."
+        )
+    elif checkpoint_alias and not resume_from_checkpoint:
+        resume_from_checkpoint = checkpoint_alias
+
     training_args = PruningTrainingArguments(
         output_dir=training_config.get(
             "output_dir", None
@@ -1305,6 +1371,7 @@ def parse_config_file(
         dataloader_num_workers=training_config.get("dataloader_num_workers", 8),
         optim=training_config.get("optimizer", training_config.get("optim", "adafactor")),
         report_to=training_config.get("report_to", ["wandb"]),
+        resume_from_checkpoint=resume_from_checkpoint,
     )
 
     # Store original config values for reference
@@ -1354,6 +1421,43 @@ def train(
         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16 or training_args.bf16}"
     )
     logger.info(f"Training/evaluation parameters {training_args}")
+
+    resolved_checkpoint: ResolvedCheckpoint | None = getattr(
+        training_args, "_resolved_checkpoint", None
+    )
+    if training_args.resume_from_checkpoint and resolved_checkpoint is None:
+        original_resume_path = training_args.resume_from_checkpoint
+        try:
+            resolved_checkpoint = resolve_resume_checkpoint_path(original_resume_path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise type(exc)(
+                f"Could not resolve checkpoint '{original_resume_path}': {exc}"
+            ) from exc
+
+        checkpoint_dir = resolved_checkpoint.checkpoint_dir.resolve()
+        run_dir = resolved_checkpoint.run_dir.resolve()
+        training_args.resume_from_checkpoint = str(checkpoint_dir)
+        setattr(training_args, "_resolved_checkpoint", resolved_checkpoint)
+
+        logger.info(
+            "Checkpoint resume requested: %s (resolved to %s)",
+            original_resume_path,
+            checkpoint_dir,
+        )
+
+        original_resolved = Path(original_resume_path).expanduser().resolve()
+        if original_resolved != checkpoint_dir:
+            logger.info("Resolved checkpoint %s → %s", original_resume_path, checkpoint_dir)
+
+        current_output_dir = (
+            Path(training_args.output_dir).expanduser().resolve()
+            if training_args.output_dir is not None
+            else None
+        )
+        if current_output_dir != run_dir:
+            logger.info("Setting output_dir to checkpoint parent directory: %s", run_dir)
+            training_args.output_dir = str(run_dir)
+
     logger.info(f"Output directory: {training_args.output_dir}")
 
     # Set seed
@@ -1545,8 +1649,10 @@ def train(
         logger.info("Dataset: %s:%s", data_args.dataset_name, data_args.subset)
     logger.info(f"Output: {training_args.output_dir}")
 
-    if training_args.resume_from_checkpoint:
-        logger.info(f"Resuming from checkpoint: {training_args.resume_from_checkpoint}")
+    if resolved_checkpoint is not None:
+        checkpoint_dir = resolved_checkpoint.checkpoint_dir
+        step_info = f" (step {resolved_checkpoint.steps})" if resolved_checkpoint.steps else ""
+        logger.info("Resuming from checkpoint: %s%s", checkpoint_dir, step_info)
 
     if training_args.do_train:
         logger.info("Starting trainer.train()...")

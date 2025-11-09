@@ -55,6 +55,16 @@ This configuration processes a larger corpus, so expect longer wall-clock time. 
 - When `report_to=["wandb"]`, runs are uploaded to the `hotchpotch/open-provence` project with slug `<config>-<timestamp>`.
 - After training, the `eval_datasets` block automatically kicks off `scripts/eval_datasets.py` with the language-appropriate config so you get nano evaluation results without additional commands.
 
+### Resuming after an interruption
+
+Interrupted runs keep Hugging Face–style checkpoints inside the training output directory (`checkpoint-3000/`, `checkpoint-3500/`, ...). Restart training with any of the following options:
+
+- Command line: `uv run open_provence_trainer <config.yaml> --checkpoint /path/to/output/run_dir` automatically resumes from the latest `checkpoint-*` under that directory. To pin a given step, pass the checkpoint directory itself (e.g., `--checkpoint /.../checkpoint-5000`).
+- Hugging Face style: `--resume_from_checkpoint /.../checkpoint-5000` (or the YAML equivalent `training_args.resume_from_checkpoint`) also works; we still auto-set `output_dir` to the checkpoint’s parent run directory so artefacts stay together.
+- Config-driven: add `training_args.checkpoint: /.../output/run_dir` (parent) or `training_args.resume_from_checkpoint: /.../output/run_dir/checkpoint-5000` when you want the recipe to resume automatically.
+
+The trainer validates that every resolved checkpoint contains `trainer_state.json` and prints which directory it picked (including the step number) before restarting so you can verify the resume target.
+
 ## Configuration Anatomy
 
 Every config has the same high-level shape:
