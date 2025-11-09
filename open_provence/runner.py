@@ -18,10 +18,46 @@ from .trainer import (
     DataArguments,
     ModelArguments,
     PruningTrainingArguments,
+    ResolvedCheckpoint,
     parse_config_file,
+    resolve_resume_checkpoint_path,
     run_eval_datasets_for_model,
     train,
 )
+
+
+def _resolve_checkpoint_if_requested(
+    training_args: PruningTrainingArguments,
+) -> ResolvedCheckpoint | None:
+    """Resolve resume_from_checkpoint once and attach metadata to training_args."""
+
+    existing: ResolvedCheckpoint | None = getattr(training_args, "_resolved_checkpoint", None)
+    if existing is not None:
+        return existing
+
+    resume_path = training_args.resume_from_checkpoint
+    if not resume_path:
+        return None
+
+    resolved_checkpoint = resolve_resume_checkpoint_path(resume_path)
+    training_args.resume_from_checkpoint = str(resolved_checkpoint.checkpoint_dir)
+    training_args.output_dir = str(resolved_checkpoint.run_dir)
+    setattr(training_args, "_resolved_checkpoint", resolved_checkpoint)
+
+    step_note = (
+        f" (step {resolved_checkpoint.steps})" if resolved_checkpoint.steps is not None else ""
+    )
+    print(
+        "[checkpoint] resume requested:",
+        resume_path,
+        "→",
+        resolved_checkpoint.checkpoint_dir,
+        step_note,
+    )
+    print("[checkpoint] output_dir set to:", resolved_checkpoint.run_dir)
+
+    return resolved_checkpoint
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +87,9 @@ def run_training(
     Returns:
         Path to the final trained model
     """
+    checkpoint_override = kwargs.pop("checkpoint", None)
+    resume_checkpoint_override = kwargs.pop("resume_checkpoint", None)
+
     parser = HfArgumentParser((ModelArguments, DataArguments, PruningTrainingArguments))  # type: ignore[arg-type]
 
     if config_file:
@@ -79,11 +118,19 @@ def run_training(
             **{k: v for k, v in kwargs.items() if hasattr(PruningTrainingArguments, k)}
         )
 
-    # Create timestamp for unique naming
+    resume_arg = checkpoint_override or resume_checkpoint_override
+    if resume_arg:
+        training_args.resume_from_checkpoint = resume_arg
+
+    resolved_checkpoint = _resolve_checkpoint_if_requested(training_args)
+
+    # Create timestamp for unique naming (when not resuming)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Set output_dir if not specified
-    if not training_args.output_dir or training_args.output_dir == "trainer_output":
+    if (
+        not training_args.output_dir or training_args.output_dir == "trainer_output"
+    ) and not resolved_checkpoint:
         # Generate default output_dir with timestamp
         if config_file:
             # Use config file name as base
@@ -143,6 +190,7 @@ def main():
     working_argv = sys.argv[:]
 
     eval_datasets_model_path: str | None = None
+    checkpoint_override: str | None = None
     filtered_argv = [working_argv[0]]
     i = 1
     while i < len(working_argv):
@@ -151,6 +199,11 @@ def main():
             if i + 1 >= len(working_argv):
                 raise ValueError(f"{arg} requires a model path argument")
             eval_datasets_model_path = working_argv[i + 1]
+            i += 2
+        elif arg in {"--checkpoint", "--resume-checkpoint"}:
+            if i + 1 >= len(working_argv):
+                raise ValueError(f"{arg} requires a checkpoint path argument")
+            checkpoint_override = working_argv[i + 1]
             i += 2
         else:
             filtered_argv.append(arg)
@@ -259,6 +312,9 @@ def main():
     if training_args is None:
         raise RuntimeError("Failed to parse training arguments.")
 
+    if checkpoint_override:
+        training_args.resume_from_checkpoint = checkpoint_override
+
     if eval_datasets_model_path:
         eval_settings = getattr(training_args, "eval_datasets", None)
         if not eval_settings:
@@ -270,11 +326,15 @@ def main():
     if model_args is None or data_args is None:
         raise RuntimeError("Failed to parse model/data arguments.")
 
+    resolved_checkpoint = _resolve_checkpoint_if_requested(training_args)
+
     # Create timestamp for unique naming
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Set output_dir if not specified or using default
-    if not training_args.output_dir or training_args.output_dir == "trainer_output":
+    if (
+        not training_args.output_dir or training_args.output_dir == "trainer_output"
+    ) and not resolved_checkpoint:
         # Generate default output_dir with timestamp
         if config_file_arg:
             # Use config file name as base
