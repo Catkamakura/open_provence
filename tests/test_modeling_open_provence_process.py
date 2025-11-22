@@ -46,6 +46,39 @@ def _load_remote_model(model_id: str) -> OpenProvenceModel:
     return model
 
 
+@cache
+def _tiny_bert_model() -> OpenProvenceModel:
+    """Lightweight model used for shape/validation tests.
+
+    Builds a single-layer BERT with a small hidden size to keep the unit tests fast
+    while still exercising the full process() pipeline.
+    """
+
+    config = OpenProvenceConfig(
+        base_model_config={
+            "model_type": "bert",
+            "hidden_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "intermediate_size": 64,
+            "vocab_size": 30522,
+        },
+        tokenizer_name_or_path="bert-base-uncased",
+        pruning_config={"hidden_size": 32},
+        max_length=64,
+    )
+    model = OpenProvenceModel(config)
+    model.eval()
+    return model
+
+
+def _load_tiny_model_or_skip() -> OpenProvenceModel:
+    try:
+        return _tiny_bert_model()
+    except Exception as exc:  # pragma: no cover - environment specific
+        pytest.skip(f"tiny test model unavailable: {exc}")
+
+
 def _load_model_with_remote_fallback(
     checkpoint_dir: Path, remote_model_id: str
 ) -> OpenProvenceModel:
@@ -267,3 +300,132 @@ def test_process_filters_irrelevant_sentences_with_english_splitter() -> None:
     assert probs, "sentence probabilities should be returned"
     assert probs[2] > 0.9
     assert probs[0] < 0.1 and probs[1] < 0.1 and probs[3] < 0.1
+
+
+def test_process_accepts_aligned_question_and_context_lists() -> None:
+    model = _load_tiny_model_or_skip()
+
+    questions = ["What is sushi?", "How do you brew green tea?"]
+    contexts = [
+        "Sushi is vinegared rice paired with seafood or vegetables.",
+        "Steep leaves in hot water just below boiling for a short time.",
+    ]
+
+    result = model.process(
+        question=questions,
+        context=contexts,
+        threshold=0.1,
+        show_progress=False,
+    )
+
+    pruned = result.get("pruned_context")
+    scores = result.get("reranking_score")
+    compression = result.get("compression_rate")
+
+    assert isinstance(pruned, list)
+    assert len(pruned) == len(questions)
+    assert all(isinstance(item, str) for item in pruned)
+    assert isinstance(scores, list)
+    assert len(scores) == len(questions)
+    assert isinstance(compression, list)
+    assert len(compression) == len(questions)
+
+
+def test_process_rejects_misaligned_question_context_lengths() -> None:
+    model = _load_tiny_model_or_skip()
+
+    with pytest.raises(ValueError):
+        model.process(
+            question=["What is sushi?", "How do you brew green tea?"],
+            context=["Only one context provided."],
+            show_progress=False,
+        )
+
+
+def test_process_handles_scalar_question_and_context_string() -> None:
+    """question: str, context: str → outputs are scalars (single doc)."""
+
+    model = _load_tiny_model_or_skip()
+
+    question = "What is sushi?"
+    context = "Sushi is vinegared rice paired with seafood."
+
+    result = model.process(question=question, context=context, show_progress=False)
+
+    assert isinstance(result.get("pruned_context"), str)
+    assert isinstance(result.get("reranking_score"), (float, type(None)))
+    assert isinstance(result.get("compression_rate"), float)
+
+
+def test_process_treats_context_list_as_multiple_documents_for_single_query() -> None:
+    """question: str, context: list[str] → one query with multiple documents."""
+
+    model = _load_tiny_model_or_skip()
+
+    question = "What is sushi?"
+    contexts = [
+        "Sushi is vinegared rice paired with seafood.",
+        "It often comes with raw fish and seaweed.",
+    ]
+
+    result = model.process(question=question, context=contexts, show_progress=False)
+
+    pruned = result.get("pruned_context")
+    scores = result.get("reranking_score")
+    compression = result.get("compression_rate")
+
+    assert isinstance(pruned, list), "pruned_context should be a list of documents"
+    assert len(pruned) == len(contexts)
+    assert isinstance(scores, list) and len(scores) == len(contexts)
+    assert isinstance(compression, list) and len(compression) == len(contexts)
+
+
+def test_process_accepts_nested_pre_split_sentences_per_query() -> None:
+    """question: list[str], context: list[list[str]] → per-query nested docs preserved."""
+
+    model = _load_tiny_model_or_skip()
+
+    questions = ["What is sushi?", "How do you brew green tea?"]
+    sentence_list = [
+        "Sushi is vinegared rice.",
+        "It can include fish.",
+    ]
+    contexts = [sentence_list, sentence_list]
+
+    result = model.process(question=questions, context=contexts, show_progress=False)
+
+    pruned = result.get("pruned_context")
+    scores = result.get("reranking_score")
+    compression = result.get("compression_rate")
+
+    assert isinstance(pruned, list) and len(pruned) == len(questions)
+    assert all(isinstance(doc, list) for doc in pruned), "documents should stay nested per query"
+    assert isinstance(scores, list) and len(scores) == len(questions)
+    assert all(isinstance(s, list) for s in scores)
+    assert isinstance(compression, list) and len(compression) == len(questions)
+    assert all(isinstance(c, list) for c in compression)
+
+
+def test_process_accepts_nested_sentences_for_single_query() -> None:
+    """question: str, context: list[list[str]] → treated as one query / one doc (pre-split)."""
+
+    model = _load_tiny_model_or_skip()
+
+    question = "What is sushi?"
+    sentence_list = ["Sushi is vinegared rice.", "It can include fish."]
+    contexts = [sentence_list]
+
+    result = model.process(question=question, context=contexts, show_progress=False)
+
+    pruned = result.get("pruned_context")
+    scores = result.get("reranking_score")
+    compression = result.get("compression_rate")
+
+    assert isinstance(pruned, list) and len(pruned) == 1
+    assert isinstance(pruned[0], str)
+    assert isinstance(scores, list) and len(scores) == 1 and not isinstance(scores[0], list)
+    assert (
+        isinstance(compression, list)
+        and len(compression) == 1
+        and not isinstance(compression[0], list)
+    )
