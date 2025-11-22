@@ -2292,13 +2292,23 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
             context_structure = "list"
             contexts = [normalized_contexts]
         else:
-            context_structure = "nested"
-            normalized_nested: list[list[Any]] = []
-            for entry in context:
-                if not _is_sequence(entry):
-                    raise ValueError("Number of context lists must match number of queries")
-                normalized_nested.append(_normalize_context_collection(entry))
-            contexts = normalized_nested
+            context_sequence = list(context)
+
+            all_scalars = all(not _is_sequence(entry) for entry in context_sequence)
+
+            if all_scalars:
+                if len(context_sequence) != len(queries):
+                    raise ValueError("Number of contexts must match number of queries")
+                context_structure = "aligned"
+                contexts = [[str(entry)] for entry in context_sequence]
+            else:
+                context_structure = "nested"
+                normalized_nested: list[list[Any]] = []
+                for entry in context_sequence:
+                    if not _is_sequence(entry):
+                        raise ValueError("Number of context lists must match number of queries")
+                    normalized_nested.append(_normalize_context_collection(entry))
+                contexts = normalized_nested
 
         if context_structure == "list" and len(queries) != 1:
             raise ValueError("Single list of contexts requires a single query")
@@ -2306,6 +2316,8 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
             raise ValueError("Number of context lists must match number of queries")
         if context_structure == "str" and len(queries) != 1:
             raise ValueError("Single context string requires a single query")
+        if context_structure == "aligned" and len(contexts) != len(queries):
+            raise ValueError("Number of context lists must match number of queries")
 
         if context_structure in {"str", "list"}:
             contexts = [contexts[0]]
@@ -3763,6 +3775,19 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
                     sentence_prob_output = (
                         sentence_probability_groups[0] if sentence_probability_groups else []
                     )
+            elif structure == "aligned" and pruned_contexts:
+                pruned_output = [entry[0] if entry else "" for entry in pruned_contexts]
+                score_output = [scores[0] if scores else None for scores in reranking_scores]
+                compression_output = [rates[0] if rates else 0.0 for rates in compression_rates]
+                if kept_sentences is not None:
+                    kept_output = [values[0] if values else [] for values in kept_sentences]
+                if removed_sentences is not None:
+                    removed_output = [values[0] if values else [] for values in removed_sentences]
+                title_output = [values[0] if values else None for values in title_values]
+                if sentence_probability_groups is not None:
+                    sentence_prob_output = [
+                        values[0] if values else [] for values in sentence_probability_groups
+                    ]
 
             result_payload = {
                 "pruned_context": pruned_output,
