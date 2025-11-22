@@ -77,7 +77,6 @@ def _load_tiny_model_or_skip() -> OpenProvenceModel:
         return _tiny_bert_model()
     except Exception as exc:  # pragma: no cover - environment specific
         pytest.skip(f"tiny test model unavailable: {exc}")
-        raise
 
 
 def _load_model_with_remote_fallback(
@@ -408,7 +407,7 @@ def test_process_accepts_nested_pre_split_sentences_per_query() -> None:
 
 
 def test_process_accepts_nested_sentences_for_single_query() -> None:
-    """question: str, context: list[list[str]] → treated as one query / multiple docs."""
+    """question: str, context: list[list[str]] → treated as one query / one doc (pre-split)."""
 
     model = _load_tiny_model_or_skip()
 

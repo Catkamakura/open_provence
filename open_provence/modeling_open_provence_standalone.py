@@ -2316,8 +2316,6 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
             raise ValueError("Number of context lists must match number of queries")
         if context_structure == "str" and len(queries) != 1:
             raise ValueError("Single context string requires a single query")
-        if context_structure == "aligned" and len(contexts) != len(queries):
-            raise ValueError("Number of context lists must match number of queries")
 
         if context_structure in {"str", "list"}:
             contexts = [contexts[0]]
