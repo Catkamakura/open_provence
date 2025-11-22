@@ -197,13 +197,23 @@ def _resolve_split(
 
 
 def _load_dataset_split(spec: DatasetSpec, split: str) -> Dataset:
-    dataset_dict = load_dataset(spec.dataset_name, spec.subset)
-    if not isinstance(dataset_dict, DatasetDict):
-        raise TypeError(f"Expected DatasetDict from load_dataset, got {type(dataset_dict)}")
-    if split not in dataset_dict:
-        available = ", ".join(dataset_dict.keys())
-        raise KeyError(f"Split '{split}' not found in dataset ({available})")
-    dataset = dataset_dict[split]
+    dataset_source: Dataset | DatasetDict
+    dataset_path = Path(spec.dataset_name).expanduser()
+    if dataset_path.exists():
+        try:
+            dataset_source = DatasetDict.load_from_disk(str(dataset_path))
+        except Exception:
+            dataset_source = Dataset.load_from_disk(str(dataset_path))
+    else:
+        dataset_source = cast(Dataset | DatasetDict, load_dataset(spec.dataset_name, spec.subset))
+
+    if isinstance(dataset_source, DatasetDict):
+        if split not in dataset_source:
+            available = ", ".join(dataset_source.keys())
+            raise KeyError(f"Split '{split}' not found in dataset ({available})")
+        dataset = dataset_source[split]
+    else:
+        dataset = dataset_source
     if spec.n_samples is not None:
         dataset = dataset.select(range(min(len(dataset), spec.n_samples)))
     return dataset
