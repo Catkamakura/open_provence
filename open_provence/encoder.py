@@ -8,6 +8,7 @@ which always exposes ranking logits alongside pruning signals.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections import OrderedDict
 from collections.abc import Sequence
@@ -97,13 +98,16 @@ class OpenProvenceEncoder(nn.Module):
         model_args = model_args or {}
         pruning_config = pruning_config or {}
 
-        # Load tokenizer
+        # Load tokenizer (include trust_remote_code from model_args if present)
+        tokenizer_trust = model_args.get("trust_remote_code", False)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name_or_path, cache_dir=cache_dir, **tokenizer_args
+            model_name_or_path, cache_dir=cache_dir, trust_remote_code=tokenizer_trust, **tokenizer_args
         )
 
         # Load the original config to check existing num_labels
-        original_config = AutoConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir)
+        original_config = AutoConfig.from_pretrained(
+            model_name_or_path, cache_dir=cache_dir, **model_args
+        )
 
         # Check if we need to adjust num_labels
         original_num_labels = getattr(original_config, "num_labels", None)
@@ -235,14 +239,17 @@ class OpenProvenceEncoder(nn.Module):
             sentence_boundaries=sentence_boundaries,
         )
 
+        # Handle both dict and object outputs from pruning head
+        pruning_logits = pruning_outputs["logits"] if isinstance(pruning_outputs, dict) else pruning_outputs.logits
+
         if return_dict:
             return {
                 "ranking_logits": ranking_logits,
-                "pruning_logits": pruning_outputs.logits,
+                "pruning_logits": pruning_logits,
                 "hidden_states": hidden_states,
             }
 
-        return ranking_logits, pruning_outputs.logits
+        return ranking_logits, pruning_logits
 
     def predict(
         self,
@@ -1058,12 +1065,21 @@ class OpenProvenceEncoder(nn.Module):
         base_config_dict = self.ranking_model.config.to_dict()
         encoder_architecture = getattr(self.ranking_model.config, "model_type", None)
 
+        # Handle both HuggingFace PretrainedConfig (with to_dict) and dataclass configs
+        pruning_config = self.pruning_head.config
+        if hasattr(pruning_config, "to_dict"):
+            pruning_config_dict = pruning_config.to_dict()
+        elif dataclasses.is_dataclass(pruning_config):
+            pruning_config_dict = dataclasses.asdict(pruning_config)
+        else:
+            pruning_config_dict = vars(pruning_config)
+
         config = OpenProvenceConfig(
             mode="reranking_pruning",
             base_model_name_or_path=self.model_name_or_path,
             base_model_config=base_config_dict,
             tokenizer_name_or_path=None,
-            pruning_config=self.pruning_head.config.to_dict(),
+            pruning_config=pruning_config_dict,
             max_length=self.max_length,
             num_labels=saved_num_labels,
             num_pruning_labels=2,

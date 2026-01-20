@@ -42,6 +42,7 @@ class OpenProvenceDataCollator:
         dataset_name_column: str | None = "dataset_name",
         id_column: str | None = "id",
         mini_batch_size: int | None = None,
+        warn_missing_scores: bool = True,
     ):  # Deprecated, kept for compatibility
         """
         Args:
@@ -59,12 +60,14 @@ class OpenProvenceDataCollator:
             dataset_name_column: Name of the dataset name column (optional)
             id_column: Name of the ID column (optional)
             mini_batch_size: Size for processing mini-batches (if None, process all at once)
+            warn_missing_scores: Whether to warn when scores column is missing (set False when ranking_weight=0)
         """
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.padding = padding
         self.truncation = truncation
         self.mini_batch_size = None  # Disabled for performance - mini batching is slower
+        self.warn_missing_scores = warn_missing_scores
 
         # Column names
         self.query_column = query_column
@@ -125,10 +128,11 @@ class OpenProvenceDataCollator:
         # Scores column is optional
         scores_available = bool(self.scores_column and self.scores_column in columns)
         if self.scores_column and not scores_available:
-            logger.warning(
-                f"Teacher scores column '{self.scores_column}' not found. "
-                f"Using '{self.labels_column}' for ranking targets."
-            )
+            if self.warn_missing_scores:
+                logger.warning(
+                    f"Teacher scores column '{self.scores_column}' not found. "
+                    f"Using '{self.labels_column}' for ranking targets."
+                )
             self.scores_column = None
 
         self._has_labels = bool(self.labels_column and self.labels_column in columns)
