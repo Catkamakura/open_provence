@@ -1678,10 +1678,9 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
 
         effective_return_dict = return_dict if return_dict is not None else True
 
-        attention_mask = (
-            attention_mask.to(self._runtime_device) if attention_mask is not None else None
-        )
-        input_ids = input_ids.to(self._runtime_device)
+        # Note: Don't move tensors to _runtime_device here - it breaks DataParallel.
+        # When using DataParallel, inputs are already on the correct device for each replica.
+        # The caller is responsible for moving inputs to the correct device.
 
         outputs = self.ranking_model(
             input_ids=input_ids,
