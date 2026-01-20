@@ -52,6 +52,24 @@ except ImportError as exc:  # pragma: no cover - mandatory dependency
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass
+class OpenProvenceSequenceClassifierOutput(ModelOutput):
+    """
+    Custom output class for OpenProvence models that includes pruning logits.
+
+    This is needed because DataParallel's gather doesn't preserve dynamically
+    added attributes on SequenceClassifierOutput. By defining pruning_logits
+    as a proper dataclass field, it gets properly gathered across GPUs.
+    """
+
+    loss: FloatTensor | None = None
+    logits: FloatTensor | None = None
+    pruning_logits: FloatTensor | None = None
+    ranking_logits: FloatTensor | None = None
+    hidden_states: tuple[torch.Tensor, ...] | None = None
+    attentions: tuple[torch.Tensor, ...] | None = None
+
+
 DEFAULT_SPLITTER_LANGUAGE = "auto"  # Updated during export; keep marker for tooling
 
 DEFAULT_PROCESS_THRESHOLD = 0.1  # Default pruning threshold when config does not specify one
@@ -1720,14 +1738,16 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
         else:
             loss_output = cast(FloatTensor, loss_tensor.to(dtype=ranking_logits.dtype))
 
-        result = SequenceClassifierOutput(
+        # Use custom output class that properly defines pruning_logits as a field.
+        # This is required for DataParallel to properly gather outputs across GPUs.
+        result = OpenProvenceSequenceClassifierOutput(
             loss=loss_output,
             logits=ranking_logits,
+            pruning_logits=pruning_logits,
+            ranking_logits=ranking_logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-        setattr(result, "pruning_logits", pruning_logits)
-        setattr(result, "ranking_logits", ranking_logits)
 
         if not effective_return_dict:
             output: tuple[torch.Tensor, ...] = (ranking_logits, pruning_logits)
