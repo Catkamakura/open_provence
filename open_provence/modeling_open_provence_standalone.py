@@ -1815,7 +1815,9 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
             )
             encoding = {key: value.to(self._runtime_device) for key, value in encoding.items()}
 
-            model_outputs = self.forward(return_dict=True, **encoding)
+            # Use torch.no_grad() to prevent gradient accumulation during inference
+            with torch.no_grad():
+                model_outputs = self.forward(return_dict=True, **encoding)
             ranking_logits = self._extract_model_output(model_outputs, "ranking_logits")
             pruning_logits = self._extract_model_output(model_outputs, "pruning_logits")
             ranking_logits = ranking_logits.detach().cpu()
@@ -2906,7 +2908,10 @@ class OpenProvenceModel(OpenProvencePreTrainedModel):
             if token_type_tensor is not None:
                 model_inputs["token_type_ids"] = token_type_tensor
 
-            model_outputs = self.forward(return_dict=True, **model_inputs)
+            # Use torch.no_grad() to prevent gradient accumulation during inference
+            # This is critical for memory efficiency when processing many documents
+            with torch.no_grad():
+                model_outputs = self.forward(return_dict=True, **model_inputs)
             inference_time += perf_counter() - infer_start
 
             ranking_logits = (
